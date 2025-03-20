@@ -13,11 +13,11 @@ class Flow3:
         self.headers = {
             "Accept": "application/json, text/plain, */*",
             "Accept-Language": "id-ID,id;q=0.9,en-US;q=0.8,en;q=0.7",
-            "Origin": "chrome-extension://lhmminnoafalclkgcbokfcngkocoffcp",
-            "Priority": "u=1, i",
+            "Origin": "https://dashboard.flow3.tech",
+            "Referer": "https://dashboard.flow3.tech/",
             "Sec-Fetch-Dest": "empty",
             "Sec-Fetch-Mode": "cors",
-            "Sec-Fetch-Site": "cross-site",
+            "Sec-Fetch-Site": "same-site",
             "User-Agent": FakeUserAgent().random
         }
         self.proxies = []
@@ -177,16 +177,9 @@ class Flow3:
         url = "https://api.flow3.tech/api/v1/user/login"
         data = json.dumps(self.generate_payload(account, address))
         headers = {
-            "Accept": "application/json, text/plain, */*",
-            "Accept-Language": "id-ID,id;q=0.9,en-US;q=0.8,en;q=0.7",
+            **self.headers,
             "Content-Length": str(len(data)),
-            "Content-Type": "application/json",
-            "Origin": "https://dashboard.flow3.tech",
-            "Referer": "https://dashboard.flow3.tech/",
-            "Sec-Fetch-Dest": "empty",
-            "Sec-Fetch-Mode": "cors",
-            "Sec-Fetch-Site": "same-site",
-            "User-Agent": FakeUserAgent().random
+            "Content-Type": "application/json"
         }
         for attempt in range(retries):
             try:
@@ -198,10 +191,10 @@ class Flow3:
                 if attempt < retries - 1:
                     await asyncio.sleep(5)
                     continue
-                return self.print_message(address, proxy, Fore.RED, f"Login Failed: {Fore.YELLOW+Style.BRIGHT}{str(e)}")
+                return self.print_message(address, proxy, Fore.RED, f"GET Access Token Failed: {Fore.YELLOW+Style.BRIGHT}{str(e)}")
             
-    async def user_info(self, account: str, address: str, use_proxy: bool, proxy=None, retries=5):
-        url = "https://api.mtcadmin.click/api/v1/point/info"
+    async def user_stats(self, account: str, address: str, use_proxy: bool, proxy=None, retries=5):
+        url = "https://api.flow3.tech/api/v1/tasks/stats"
         headers = {
             **self.headers,
             "Authorization": f"Bearer {self.access_tokens[address]}"
@@ -210,7 +203,7 @@ class Flow3:
             try:
                 response = await asyncio.to_thread(requests.get, url=url, headers=headers, proxy=proxy, timeout=120, impersonate="safari15_5")
                 if response.status_code == 401:
-                    await self.process_get_token(account, address, use_proxy)
+                    await self.process_get_access_token(account, address, use_proxy)
                     headers["Authorization"] = f"Bearer {self.access_tokens[address]}"
                     continue
                 response.raise_for_status()
@@ -222,8 +215,8 @@ class Flow3:
                     continue
                 return self.print_message(address, proxy, Fore.RED, f"GET Earning Data Failed: {Fore.YELLOW+Style.BRIGHT}{str(e)}")
             
-    async def send_ping(self, account: str, address: str, use_proxy: bool, proxy=None, retries=5):
-        url = "https://api.mtcadmin.click/api/v1/bandwidth"
+    async def daily_checkin(self, account: str, address: str, use_proxy: bool, proxy=None, retries=5):
+        url = "https://api.flow3.tech/api/v1/tasks/complete-daily"
         headers = {
             **self.headers,
             "Authorization": f"Bearer {self.access_tokens[address]}",
@@ -233,7 +226,85 @@ class Flow3:
             try:
                 response = await asyncio.to_thread(requests.post, url=url, headers=headers, proxy=proxy, timeout=120, impersonate="safari15_5")
                 if response.status_code == 401:
-                    await self.process_get_token(account, address, use_proxy)
+                    await self.process_get_access_token(account, address, use_proxy)
+                    headers["Authorization"] = f"Bearer {self.access_tokens[address]}"
+                    continue
+                elif response.status_code == 400:
+                    return self.print_message(address, proxy, Fore.YELLOW, "Already Check-In Today")
+                response.raise_for_status()
+                return response.json()
+            except Exception as e:
+                if attempt < retries - 1:
+                    await asyncio.sleep(5)
+                    continue
+                return self.print_message(address, proxy, Fore.RED, f"Check-In Failed: {Fore.YELLOW+Style.BRIGHT}{str(e)}")
+            
+    async def task_lists(self, account: str, address: str, use_proxy: bool, proxy=None, retries=5):
+        url = "https://api.flow3.tech/api/v1/tasks/"
+        headers = {
+            **self.headers,
+            "Authorization": f"Bearer {self.access_tokens[address]}"
+        }
+        for attempt in range(retries):
+            try:
+                response = await asyncio.to_thread(requests.get, url=url, headers=headers, proxy=proxy, timeout=120, impersonate="safari15_5")
+                if response.status_code == 401:
+                    await self.process_get_access_token(account, address, use_proxy)
+                    headers["Authorization"] = f"Bearer {self.access_tokens[address]}"
+                    continue
+                response.raise_for_status()
+                result = response.json()
+                return result['data']
+            except Exception as e:
+                if attempt < retries - 1:
+                    await asyncio.sleep(5)
+                    continue
+                return self.print_message(address, proxy, Fore.RED, f"GET Task Lists Failed: {Fore.YELLOW+Style.BRIGHT}{str(e)}")
+            
+    async def complete_tasks(self, account: str, address: str, task_id: int, title: str, use_proxy: bool, proxy=None, retries=5):
+        url = f"https://api.flow3.tech/api/v1/tasks/{task_id}/complete"
+        headers = {
+            **self.headers,
+            "Authorization": f"Bearer {self.access_tokens[address]}",
+            "Content-Length": "0"
+        }
+        for attempt in range(retries):
+            try:
+                response = await asyncio.to_thread(requests.post, url=url, headers=headers, proxy=proxy, timeout=120, impersonate="safari15_5")
+                if response.status_code == 401:
+                    await self.process_get_access_token(account, address, use_proxy)
+                    headers["Authorization"] = f"Bearer {self.access_tokens[address]}"
+                    continue
+                response.raise_for_status()
+                return response.json()
+            except Exception as e:
+                if attempt < retries - 1:
+                    await asyncio.sleep(5)
+                    continue
+                return self.print_message(address, proxy, Fore.WHITE, f"Task {title}"
+                    f"{Fore.RED + Style.BRIGHT} Not Completed: {Style.RESET_ALL}"
+                    f"{Fore.YELLOW + Style.BRIGHT}{str(e)}{Style.RESET_ALL}"
+                )
+
+    async def send_ping(self, account: str, address: str, use_proxy: bool, proxy=None, retries=5):
+        url = "https://api.mtcadmin.click/api/v1/bandwidth"
+        headers = {
+            "Accept": "application/json, text/plain, */*",
+            "Accept-Language": "id-ID,id;q=0.9,en-US;q=0.8,en;q=0.7",
+            "Authorization": f"Bearer {self.access_tokens[address]}",
+            "Content-Length": "0",
+            "Origin": "chrome-extension://lhmminnoafalclkgcbokfcngkocoffcp",
+            "Priority": "u=1, i",
+            "Sec-Fetch-Dest": "empty",
+            "Sec-Fetch-Mode": "cors",
+            "Sec-Fetch-Site": "cross-site",
+            "User-Agent": FakeUserAgent().random
+        }
+        for attempt in range(retries):
+            try:
+                response = await asyncio.to_thread(requests.post, url=url, headers=headers, proxy=proxy, timeout=120, impersonate="safari15_5")
+                if response.status_code == 401:
+                    await self.process_get_access_token(account, address, use_proxy)
                     headers["Authorization"] = f"Bearer {self.access_tokens[address]}"
                     continue
                 response.raise_for_status()
@@ -245,7 +316,7 @@ class Flow3:
                     continue
                 return self.print_message(address, proxy, Fore.RED, f"PING Failed: {Fore.YELLOW+Style.BRIGHT}{str(e)}")
             
-    async def process_get_token(self, account: str, address: str, use_proxy: bool):
+    async def process_get_access_token(self, account: str, address: str, use_proxy: bool):
         proxy = self.get_next_proxy_for_account(address) if use_proxy else None
         token = None
         while token is None:
@@ -256,50 +327,105 @@ class Flow3:
                 continue
             
             self.access_tokens[address] = token
-            self.print_message(address, proxy, Fore.GREEN, "Login Success")
+            self.print_message(address, proxy, Fore.GREEN, "GET Access Token Success")
             return self.access_tokens[address]
             
-    async def process_get_earning(self, account: str, address: str, use_proxy: bool):
+    async def process_get_user_earning(self, account: str, address: str, use_proxy: bool):
         while True:
             proxy = self.get_next_proxy_for_account(address) if use_proxy else None
-            today_earning = "N/A"
-            total_earning = "N/A"
-            user = await self.user_info(account, address, use_proxy, proxy)
+            user = await self.user_stats(account, address, use_proxy, proxy)
             if user:
-                today_earning = user.get("todayEarningPoint", 0)
-                total_earning = user.get("totalEarningPoint", 0)
-
-            self.print_message(address, proxy, Fore.GREEN, 
-                f"Earning: "
-                f"{Fore.CYAN + Style.BRIGHT}Today{Style.RESET_ALL}"
-                f"{Fore.WHITE + Style.BRIGHT} {today_earning} PTS {Style.RESET_ALL}"
-                f"{Fore.MAGENTA + Style.BRIGHT}-{Style.RESET_ALL}"
-                f"{Fore.CYAN + Style.BRIGHT} Total {Style.RESET_ALL}"
-                f"{Fore.WHITE + Style.BRIGHT}{total_earning} PTS{Style.RESET_ALL}"
-            )
+                bandwith_earning = float(user.get("totalBandwidthReward", 0))
+                total_earning = float(user.get("totalRewardPoint", 0))
+                referral_earning = float(user.get("totalReferralRewardPoint", 0))
+                task_earning = float(user.get("totalTaskRewardPoint", 0))
+                self.print_message(address, proxy, Fore.GREEN, 
+                    f"Earning: "
+                    f"{Fore.CYAN + Style.BRIGHT}Bandwith{Style.RESET_ALL}"
+                    f"{Fore.WHITE + Style.BRIGHT} {bandwith_earning:.2f} PTS {Style.RESET_ALL}"
+                    f"{Fore.MAGENTA + Style.BRIGHT}-{Style.RESET_ALL}"
+                    f"{Fore.CYAN + Style.BRIGHT} Total {Style.RESET_ALL}"
+                    f"{Fore.WHITE + Style.BRIGHT}{total_earning:.2f} PTS{Style.RESET_ALL}"
+                    f"{Fore.MAGENTA + Style.BRIGHT} - {Style.RESET_ALL}"
+                    f"{Fore.CYAN + Style.BRIGHT}Referral{Style.RESET_ALL}"
+                    f"{Fore.WHITE + Style.BRIGHT} {referral_earning:.2f} PTS {Style.RESET_ALL}"
+                    f"{Fore.MAGENTA + Style.BRIGHT}-{Style.RESET_ALL}"
+                    f"{Fore.CYAN + Style.BRIGHT} Task {Style.RESET_ALL}"
+                    f"{Fore.WHITE + Style.BRIGHT}{task_earning:.2f} PTS{Style.RESET_ALL}"
+                )
             await asyncio.sleep(10 * 60)
+
+    async def process_claim_daily_checkin(self, account: str, address: str, use_proxy: bool):
+        while True:
+            proxy = self.get_next_proxy_for_account(address) if use_proxy else None
+            checkin = await self.daily_checkin(account, address, use_proxy, proxy)
+            if checkin and checkin.get("message") == "Complete daily tasks successfully":
+                self.print_message(address, proxy, Fore.GREEN, "Check-In Success")
+            await asyncio.sleep(12 * 60 * 60)
+
+    async def process_complete_available_tasks(self, account: str, address: str, use_proxy: bool):
+        while True:
+            proxy = self.get_next_proxy_for_account(address) if use_proxy else None
+            tasks = await self.task_lists(account, address, use_proxy, proxy)
+            if tasks:
+                completed = False
+                for task in tasks:
+                    if task:
+                        task_id = task.get("taskId")
+                        title = task.get("title")
+                        status = task.get("status")
+
+                        if status == 0:
+                            complete = await self.complete_tasks(account, address, str(task_id), title, use_proxy, proxy)
+                            if complete and complete.get("message") == "Complete tasks successfully":
+                                self.print_message(address, proxy, Fore.WHITE, 
+                                    f"Task {title} "
+                                    f"{Fore.GREEN + Style.BRIGHT}Is Completed{Style.RESET_ALL}"
+                                )
+                        else:
+                            completed = True
+
+                if completed:
+                    self.print_message(address, proxy, Fore.GREEN, "All Available Tasks Is Completed")
+
+            await asyncio.sleep(24 * 60 * 60)
             
     async def process_send_ping(self, account: str, address: str, use_proxy: bool):
         while True:
             proxy = self.get_next_proxy_for_account(address) if use_proxy else None
-            uptime = "N/A"
+            print(
+                f"{Fore.CYAN + Style.BRIGHT}[ {datetime.now().astimezone(wib).strftime('%x %X %Z')} ]{Style.RESET_ALL}"
+                f"{Fore.WHITE + Style.BRIGHT} | {Style.RESET_ALL}"
+                f"{Fore.YELLOW + Style.BRIGHT}Try to Sent Ping...{Style.RESET_ALL}",
+                end="\r",
+                flush=True
+            )
+            
             ping = await self.send_ping(account, address, use_proxy, proxy)
             if ping:
                 uptime = ping.get("totalTime", 0)
+                self.print_message(address, proxy, Fore.GREEN, 
+                    f"PING Success "
+                    f"{Fore.MAGENTA + Style.BRIGHT}-{Style.RESET_ALL}"
+                    f"{Fore.CYAN + Style.BRIGHT} Uptime: {Style.RESET_ALL}"
+                    f"{Fore.WHITE + Style.BRIGHT}{uptime}{Style.RESET_ALL}"
+                )
 
-            self.print_message(address, proxy, Fore.GREEN, 
-                f"PING Success "
-                f"{Fore.MAGENTA + Style.BRIGHT}-{Style.RESET_ALL}"
-                f"{Fore.CYAN + Style.BRIGHT} Uptime: {Style.RESET_ALL}"
-                f"{Fore.WHITE + Style.BRIGHT}{uptime}{Style.RESET_ALL}"
+            print(
+                f"{Fore.CYAN + Style.BRIGHT}[ {datetime.now().astimezone(wib).strftime('%x %X %Z')} ]{Style.RESET_ALL}"
+                f"{Fore.WHITE + Style.BRIGHT} | {Style.RESET_ALL}"
+                f"{Fore.BLUE + Style.BRIGHT}Wait For 1 Minutes For Next Ping...{Style.RESET_ALL}",
+                end="\r"
             )
             await asyncio.sleep(60)
         
     async def process_accounts(self, account: str, address: str, use_proxy: bool):
-        self.access_tokens[address] = await self.process_get_token(account, address, use_proxy)
+        self.access_tokens[address] = await self.process_get_access_token(account, address, use_proxy)
         if self.access_tokens[address]:
             tasks = []
-            tasks.append(asyncio.create_task(self.process_get_earning(account, address, use_proxy)))
+            tasks.append(asyncio.create_task(self.process_get_user_earning(account, address, use_proxy)))
+            tasks.append(asyncio.create_task(self.process_claim_daily_checkin(account, address, use_proxy)))
+            tasks.append(asyncio.create_task(self.process_complete_available_tasks(account, address, use_proxy)))
             tasks.append(asyncio.create_task(self.process_send_ping(account, address, use_proxy)))
             await asyncio.gather(*tasks)
 

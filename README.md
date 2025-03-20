@@ -10,6 +10,8 @@ Download Extension : [Flow3 Extension](https://chromewebstore.google.com/detail/
   - Auto Run With [Monosans](https://raw.githubusercontent.com/monosans/proxy-list/main/proxies/all.txt) Proxy - Choose 1
   - Auto Run With Private Proxy - Choose 2
   - Auto Run Without Proxy - Choose 3
+  - Auto Claim Daily Check-In
+  - Auto Complete Available Tasks
   - Auto Send Ping Every 1 Minutes
   - Multi Accounts With Threads
 
