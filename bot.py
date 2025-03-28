@@ -287,7 +287,7 @@ class Flow3:
                 )
 
     async def send_ping(self, account: str, address: str, use_proxy: bool, proxy=None, retries=5):
-        url = "https://api.mtcadmin.click/api/v1/bandwidth"
+        url = "https://api.flow3.tech/api/v1/bandwidth"
         headers = {
             "Accept": "application/json, text/plain, */*",
             "Accept-Language": "id-ID,id;q=0.9,en-US;q=0.8,en;q=0.7",
