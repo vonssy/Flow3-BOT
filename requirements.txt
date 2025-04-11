@@ -1,6 +1,4 @@
 curl-cffi
-base58
-pynacl
 fake-useragent
 colorama
 pytz
