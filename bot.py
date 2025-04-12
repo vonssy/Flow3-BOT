@@ -81,47 +81,36 @@ class Flow3:
             self.proxies = []
 
     def check_proxy_schemes(self, proxies):
-        schemes = ["http://", "https://", "socks4://", "socks5://"]
-        if any(proxies.startswith(scheme) for scheme in schemes):
-            return proxies
-        return f"http://{proxies}"
-
+         schemes = ["http://", "https://", "socks4://", "socks5://"]
+         if any(proxies.startswith(scheme) for scheme in schemes):
+             return proxies
+         return f"http://{proxies}"
+ 
     def get_next_proxy_for_account(self, account):
-        if account not in self.account_proxies:
-            if not self.proxies:
-                return None
-            proxy = self.check_proxy_schemes(self.proxies[self.proxy_index])
-            self.account_proxies[account] = proxy
-            self.proxy_index = (self.proxy_index + 1) % len(self.proxies)
-        return self.account_proxies[account]
-
+         if account not in self.account_proxies:
+             if not self.proxies:
+                 return None
+             proxy = self.check_proxy_schemes(self.proxies[self.proxy_index])
+             self.account_proxies[account] = proxy
+             self.proxy_index = (self.proxy_index + 1) % len(self.proxies)
+         return self.account_proxies[account]
+ 
     def rotate_proxy_for_account(self, account):
-        if not self.proxies:
-            return None
-        proxy = self.check_proxy_schemes(self.proxies[self.proxy_index])
-        self.account_proxies[account] = proxy
-        self.proxy_index = (self.proxy_index + 1) % len(self.proxies)
-        return proxy
+         if not self.proxies:
+             return None
+         proxy = self.check_proxy_schemes(self.proxies[self.proxy_index])
+         self.account_proxies[account] = proxy
+         self.proxy_index = (self.proxy_index + 1) % len(self.proxies)
+         return proxy
     
-    def decode_refresh_token(self, token: str):
+    def decode_token(self, token: str, key: str):
         try:
             header, payload, signature = token.split(".")
             decoded_payload = base64.urlsafe_b64decode(payload + "==").decode("utf-8")
             parsed_payload = json.loads(decoded_payload)
-            access_token = parsed_payload["accessToken"]
+            result = parsed_payload[key]
 
-            return access_token
-        except Exception as e:
-            return None
-        
-    def decode_access_token(self, token: str):
-        try:
-            header, payload, signature = token.split(".")
-            decoded_payload = base64.urlsafe_b64decode(payload + "==").decode("utf-8")
-            parsed_payload = json.loads(decoded_payload)
-            email = parsed_payload["email"]
-
-            return email
+            return result
         except Exception as e:
             return None
     
@@ -132,12 +121,13 @@ class Flow3:
             return f"{mask_account}@{domain}"
         
     def print_message(self, account, proxy, color, message):
+        proxy_value = proxy.get("http") if isinstance(proxy, dict) else proxy
         self.log(
             f"{Fore.CYAN + Style.BRIGHT}[ Account:{Style.RESET_ALL}"
             f"{Fore.WHITE + Style.BRIGHT} {self.mask_account(account)} {Style.RESET_ALL}"
             f"{Fore.MAGENTA + Style.BRIGHT}-{Style.RESET_ALL}"
             f"{Fore.CYAN + Style.BRIGHT} Proxy: {Style.RESET_ALL}"
-            f"{Fore.WHITE + Style.BRIGHT}{proxy}{Style.RESET_ALL}"
+            f"{Fore.WHITE + Style.BRIGHT}{proxy_value}{Style.RESET_ALL}"
             f"{Fore.MAGENTA + Style.BRIGHT} - {Style.RESET_ALL}"
             f"{Fore.CYAN + Style.BRIGHT}Status:{Style.RESET_ALL}"
             f"{color + Style.BRIGHT} {message} {Style.RESET_ALL}"
@@ -199,7 +189,7 @@ class Flow3:
                     await self.process_refreshing_tokens(account, use_proxy)
                     headers["Authorization"] = f"Bearer {self.access_tokens[account]}"
                     continue
-
+                
                 response.raise_for_status()
                 return response.json()
             except Exception as e:
@@ -382,7 +372,7 @@ class Flow3:
 
                 updated_tokens = []
                 for token in current_tokens:
-                    old_account = self.decode_access_token(self.decode_refresh_token(token))
+                    old_account = self.decode_token(self.decode_token(token, "accessToken"), "email")
                     if old_account == account:
                         updated_tokens.append(tokens["refreshToken"])
                     else:
@@ -556,10 +546,10 @@ class Flow3:
                 tasks = []
                 for refresh_token in tokens:
                     if refresh_token:
-                        access_token = self.decode_refresh_token(refresh_token)
+                        access_token = self.decode_token(refresh_token, "accessToken")
 
                         if access_token:
-                            account = self.decode_access_token(access_token)
+                            account = self.decode_token(access_token, "email")
 
                             if account:
                                 self.access_tokens[account] = access_token
@@ -575,6 +565,7 @@ class Flow3:
             return
         except Exception as e:
             self.log(f"{Fore.RED+Style.BRIGHT}Error: {e}{Style.RESET_ALL}")
+            raise e
 
 if __name__ == "__main__":
     try:
