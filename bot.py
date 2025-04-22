@@ -2,7 +2,7 @@ from curl_cffi import requests
 from fake_useragent import FakeUserAgent
 from datetime import datetime
 from colorama import *
-import asyncio, json, base64, os, pytz
+import asyncio, json, time, base64, os, pytz
 
 wib = pytz.timezone('Asia/Jakarta')
 
@@ -103,6 +103,25 @@ class Flow3:
          self.proxy_index = (self.proxy_index + 1) % len(self.proxies)
          return proxy
     
+    def save_new_token(self, account: str, tokens: dict):
+        try:
+            with open("tokens.txt", "r") as f:
+                current_tokens = [line.strip() for line in f if line.strip()]
+
+            updated_tokens = []
+            for token in current_tokens:
+                old_account = self.decode_token(self.decode_token(token, "accessToken"), "email")
+                if old_account == account:
+                    updated_tokens.append(tokens["refreshToken"])
+                else:
+                    updated_tokens.append(token)
+
+            with open("tokens.txt", "w") as f:
+                f.write("\n".join(updated_tokens) + "\n")
+
+        except Exception as e:
+            return None
+    
     def decode_token(self, token: str, key: str):
         try:
             header, payload, signature = token.split(".")
@@ -111,6 +130,17 @@ class Flow3:
             result = parsed_payload[key]
 
             return result
+        except Exception as e:
+            return None
+    
+    def get_token_exp_time(self, token: str):
+        try:
+            header, payload, signature = token.split(".")
+            decoded_payload = base64.urlsafe_b64decode(payload + "==").decode("utf-8")
+            parsed_payload = json.loads(decoded_payload)
+            exp_time = parsed_payload["exp"]
+
+            return exp_time
         except Exception as e:
             return None
     
@@ -176,7 +206,7 @@ class Flow3:
                     continue
                 return self.print_message(account, proxy, Fore.RED, f"Refreshing Tokens Failed: {Fore.YELLOW+Style.BRIGHT}{str(e)}")
     
-    async def get_connection_quality(self, account: str, use_proxy: bool, proxy=None, retries=5):
+    async def get_connection_quality(self, account: str, proxy=None, retries=5):
         url = f"{self.BASE_API}/user/get-connection-quality"
         headers = {
             **self.headers,
@@ -185,11 +215,6 @@ class Flow3:
         for attempt in range(retries):
             try:
                 response = await asyncio.to_thread(requests.get, url=url, headers=headers, proxy=proxy, timeout=120, impersonate="chrome110")
-                if response.status_code == 401:
-                    await self.process_refreshing_tokens(account, use_proxy)
-                    headers["Authorization"] = f"Bearer {self.access_tokens[account]}"
-                    continue
-                
                 response.raise_for_status()
                 return response.json()
             except Exception as e:
@@ -198,7 +223,7 @@ class Flow3:
                     continue
                 return self.print_message(account, proxy, Fore.RED, f"GET Connection Quality Failed: {Fore.YELLOW+Style.BRIGHT}{str(e)}")
     
-    async def get_point_stats(self, account: str, use_proxy: bool, proxy=None, retries=5):
+    async def get_point_stats(self, account: str, proxy=None, retries=5):
         url = f"{self.BASE_API}/user/get-point-stats"
         headers = {
             **self.headers,
@@ -207,11 +232,6 @@ class Flow3:
         for attempt in range(retries):
             try:
                 response = await asyncio.to_thread(requests.get, url=url, headers=headers, proxy=proxy, timeout=120, impersonate="chrome110")
-                if response.status_code == 401:
-                    await self.process_refreshing_tokens(account, use_proxy)
-                    headers["Authorization"] = f"Bearer {self.access_tokens[account]}"
-                    continue
-
                 response.raise_for_status()
                 result = response.json()
                 return result['data']
@@ -221,7 +241,7 @@ class Flow3:
                     continue
                 return self.print_message(account, proxy, Fore.RED, f"GET Earning Data Failed: {Fore.YELLOW+Style.BRIGHT}{str(e)}")
     
-    async def get_daily_checkin(self, account: str, use_proxy: bool, proxy=None, retries=5):
+    async def get_daily_checkin(self, account: str, proxy=None, retries=5):
         url = f"{self.BASE_API}/task/get-user-task-daily"
         headers = {
             **self.headers,
@@ -230,11 +250,6 @@ class Flow3:
         for attempt in range(retries):
             try:
                 response = await asyncio.to_thread(requests.get, url=url, headers=headers, proxy=proxy, timeout=120, impersonate="chrome110")
-                if response.status_code == 401:
-                    await self.process_refreshing_tokens(account, use_proxy)
-                    headers["Authorization"] = f"Bearer {self.access_tokens[account]}"
-                    continue
-
                 response.raise_for_status()
                 result = response.json()
                 return result['data']
@@ -244,7 +259,7 @@ class Flow3:
                     continue
                 return self.print_message(account, proxy, Fore.RED, f"GET Daily Check-In Data Failed: {Fore.YELLOW+Style.BRIGHT}{str(e)}")
     
-    async def claim_daily_checkin(self, account: str, task_id: str, title: str, use_proxy: bool, proxy=None, retries=5):
+    async def claim_daily_checkin(self, account: str, task_id: str, title: str, proxy=None, retries=5):
         url = f"{self.BASE_API}/task/daily-check-in"
         data = json.dumps({"taskId":task_id})
         headers = {
@@ -256,11 +271,6 @@ class Flow3:
         for attempt in range(retries):
             try:
                 response = await asyncio.to_thread(requests.post, url=url, headers=headers, data=data, proxy=proxy, timeout=120, impersonate="chrome110")
-                if response.status_code == 401:
-                    await self.process_refreshing_tokens(account, use_proxy)
-                    headers["Authorization"] = f"Bearer {self.access_tokens[account]}"
-                    continue
-
                 response.raise_for_status()
                 return response.json()
             except Exception as e:
@@ -272,7 +282,7 @@ class Flow3:
                     f"{Fore.YELLOW+Style.BRIGHT}{str(e)}{Style.RESET_ALL}"
                 )
     
-    async def get_user_task(self, account: str, use_proxy: bool, proxy=None, retries=5):
+    async def get_user_task(self, account: str, proxy=None, retries=5):
         url = f"{self.BASE_API}/task/get-user-task"
         headers = {
             **self.headers,
@@ -281,11 +291,6 @@ class Flow3:
         for attempt in range(retries):
             try:
                 response = await asyncio.to_thread(requests.get, url=url, headers=headers, proxy=proxy, timeout=120, impersonate="chrome110")
-                if response.status_code == 401:
-                    await self.process_refreshing_tokens(account, use_proxy)
-                    headers["Authorization"] = f"Bearer {self.access_tokens[account]}"
-                    continue
-
                 response.raise_for_status()
                 result = response.json()
                 return result['data']
@@ -295,7 +300,7 @@ class Flow3:
                     continue
                 return self.print_message(account, proxy, Fore.RED, f"GET Daily Check-In Data Failed: {Fore.YELLOW+Style.BRIGHT}{str(e)}")
     
-    async def do_task(self, account: str, task_id: str, title: str, use_proxy: bool, proxy=None, retries=5):
+    async def do_task(self, account: str, task_id: str, title: str, proxy=None, retries=5):
         url = f"{self.BASE_API}/task/do-task"
         data = json.dumps({"taskId":task_id})
         headers = {
@@ -307,11 +312,6 @@ class Flow3:
         for attempt in range(retries):
             try:
                 response = await asyncio.to_thread(requests.post, url=url, headers=headers, data=data, proxy=proxy, timeout=120, impersonate="chrome110")
-                if response.status_code == 401:
-                    await self.process_refreshing_tokens(account, use_proxy)
-                    headers["Authorization"] = f"Bearer {self.access_tokens[account]}"
-                    continue
-
                 response.raise_for_status()
                 return response.json()
             except Exception as e:
@@ -324,7 +324,7 @@ class Flow3:
                     f"{Fore.YELLOW+Style.BRIGHT}{str(e)}{Style.RESET_ALL}"
                 )
     
-    async def claim_task(self, account: str, task_id: str, title: str, use_proxy: bool, proxy=None, retries=5):
+    async def claim_task(self, account: str, task_id: str, title: str, proxy=None, retries=5):
         url = f"{self.BASE_API}/task/claim-task"
         data = json.dumps({"taskId":task_id})
         headers = {
@@ -336,11 +336,6 @@ class Flow3:
         for attempt in range(retries):
             try:
                 response = await asyncio.to_thread(requests.post, url=url, headers=headers, data=data, proxy=proxy, timeout=120, impersonate="chrome110")
-                if response.status_code == 401:
-                    await self.process_refreshing_tokens(account, use_proxy)
-                    headers["Authorization"] = f"Bearer {self.access_tokens[account]}"
-                    continue
-
                 response.raise_for_status()
                 return response.json()
             except Exception as e:
@@ -354,40 +349,22 @@ class Flow3:
                 )
     
     async def process_refreshing_tokens(self, account: str, use_proxy: bool):
-        proxy = self.get_next_proxy_for_account(account) if use_proxy else None
-        tokens = None
-        while tokens is None:
-            tokens = await self.refresh_token(account, proxy)
-            if not tokens:
-                proxy = self.rotate_proxy_for_account(account) if use_proxy else None
-                await asyncio.sleep(5)
-                continue
-            
-            self.access_tokens[account] = tokens["accessToken"]
-            self.refresh_tokens[account] = tokens["refreshToken"]
+        while True:
+            await asyncio.sleep(55 * 60)
 
-            try:
-                with open("tokens.txt", "r") as f:
-                    current_tokens = [line.strip() for line in f if line.strip()]
-
-                updated_tokens = []
-                for token in current_tokens:
-                    old_account = self.decode_token(self.decode_token(token, "accessToken"), "email")
-                    if old_account == account:
-                        updated_tokens.append(tokens["refreshToken"])
-                    else:
-                        updated_tokens.append(token)
-
-                with open("tokens.txt", "w") as f:
-                    f.write("\n".join(updated_tokens) + "\n")
-
-            except Exception as e:
-                self.print_message(account, proxy, Fore.RED, "Update tokens.txt Failed: "
-                    f"{Fore.YELLOW+Style.BRIGHT}{str(e)}{Style.RESET_ALL}"
-                )
-            
-            self.print_message(account, proxy, Fore.GREEN, "Refreshing Tokens Success")
-            return self.access_tokens[account], self.refresh_tokens[account]
+            proxy = self.get_next_proxy_for_account(account) if use_proxy else None
+            tokens = None
+            while tokens is None:
+                tokens = await self.refresh_token(account, proxy)
+                if not tokens:
+                    proxy = self.rotate_proxy_for_account(account) if use_proxy else None
+                    await asyncio.sleep(5)
+                    continue
+                
+                self.access_tokens[account] = tokens["accessToken"]
+                self.refresh_tokens[account] = tokens["refreshToken"]
+                self.print_message(account, proxy, Fore.GREEN, "Refreshing Tokens Success")
+                self.save_new_token(account, tokens)
         
     async def process_get_connection_quality(self, account: str, use_proxy: bool):
         while True:
@@ -395,7 +372,7 @@ class Flow3:
 
             quality = "N/A"
 
-            connection = await self.get_connection_quality(account, use_proxy, proxy)
+            connection = await self.get_connection_quality(account, proxy)
             if connection:
                 quality = connection.get("data", 0)
 
@@ -412,7 +389,7 @@ class Flow3:
             earning_today = "N/A"
             earning_total = "N/A"
 
-            point_stats = await self.get_point_stats(account, use_proxy, proxy)
+            point_stats = await self.get_point_stats(account, proxy)
             if point_stats:
                 today_point = float(point_stats.get("todayPointEarned", 0))
                 total_point = float(point_stats.get("totalPointEarned", 0))
@@ -433,7 +410,7 @@ class Flow3:
         while True:
             proxy = self.get_next_proxy_for_account(account) if use_proxy else None
 
-            daily_checkin = await self.get_daily_checkin(account, use_proxy, proxy)
+            daily_checkin = await self.get_daily_checkin(account, proxy)
             if daily_checkin:
                 completed = False
                 for task in daily_checkin:
@@ -444,7 +421,7 @@ class Flow3:
                         status = task["status"]
 
                         if status == "idle":
-                            claim = await self.claim_daily_checkin(account, task_id, title, use_proxy, proxy)
+                            claim = await self.claim_daily_checkin(account, task_id, title, proxy)
                             if claim and claim.get("result") == "success":
                                 self.print_message(account, proxy, Fore.WHITE, f"{title}"
                                     f"{Fore.GREEN + Style.BRIGHT} Is Claimed {Style.RESET_ALL}"
@@ -464,7 +441,7 @@ class Flow3:
         while True:
             proxy = self.get_next_proxy_for_account(account) if use_proxy else None
 
-            tasks = await self.get_user_task(account, use_proxy, proxy)
+            tasks = await self.get_user_task(account, proxy)
             if tasks:
                 for task in tasks:
                     completed = False
@@ -475,14 +452,14 @@ class Flow3:
                         status = task["status"]
 
                         if status == "idle":
-                            perform = await self.do_task(account, task_id, title, use_proxy, proxy)
+                            perform = await self.do_task(account, task_id, title, proxy)
                             if perform and perform.get("result") == "success":
                                 self.print_message(account, proxy, Fore.BLUE, "Perform Task"
                                     f"{Fore.WHITE + Style.BRIGHT} {title} {Style.RESET_ALL}"
                                     f"{Fore.GREEN + Style.BRIGHT}Success{Style.RESET_ALL}"
                                 )
 
-                                claim = await self.claim_task(account, task_id, title, use_proxy, proxy)
+                                claim = await self.claim_task(account, task_id, title, proxy)
                                 if claim and claim.get("result") == "success":
                                     self.print_message(account, proxy, Fore.BLUE, "Task "
                                         f"{Fore.WHITE + Style.BRIGHT}{title}{Style.RESET_ALL}"
@@ -493,7 +470,7 @@ class Flow3:
                                     )
 
                         elif status == "pending":
-                            claim = await self.claim_task(account, task_id, title, use_proxy, proxy)
+                            claim = await self.claim_task(account, task_id, title, proxy)
                             if claim and claim.get("result") == "success":
                                 self.print_message(account, proxy, Fore.BLUE, "Task "
                                     f"{Fore.WHITE + Style.BRIGHT}{title}{Style.RESET_ALL}"
@@ -512,12 +489,45 @@ class Flow3:
             await asyncio.sleep(24 * 60 * 60)
         
     async def process_accounts(self, account: str, use_proxy: bool):
-        tasks = []
-        tasks.append(asyncio.create_task(self.process_get_connection_quality(account, use_proxy)))
-        tasks.append(asyncio.create_task(self.process_get_user_earning(account, use_proxy)))
-        tasks.append(asyncio.create_task(self.process_claim_daily_checkin(account, use_proxy)))
-        tasks.append(asyncio.create_task(self.process_complete_user_tasks(account, use_proxy)))
-        await asyncio.gather(*tasks)
+        proxy = self.get_next_proxy_for_account(account) if use_proxy else None
+
+        exp_refresh = self.get_token_exp_time(self.refresh_tokens[account])
+        exp_access = self.get_token_exp_time(self.access_tokens[account])
+        
+        if exp_refresh >= int(time.time()):
+            self.print_message(account, proxy, Fore.GREEN, "Token Valid")
+
+            if exp_access < int(time.time()):
+                self.print_message(account, proxy, Fore.RED, "Access Token Expired, "
+                    f"{Fore.YELLOW + Style.BRIGHT}Refreshing...{Style.RESET_ALL}"
+                )
+
+                tokens = None
+                while tokens is None:
+                    tokens = await self.refresh_token(account, proxy)
+                    if not tokens:
+                        proxy = self.rotate_proxy_for_account(account) if use_proxy else None
+                        await asyncio.sleep(5)
+                        continue
+                    
+                    self.access_tokens[account] = tokens["accessToken"]
+                    self.refresh_tokens[account] = tokens["refreshToken"]
+                    self.print_message(account, proxy, Fore.GREEN, "Refreshing Tokens Success")
+                    self.save_new_token(account, tokens)
+
+            tasks = [
+                asyncio.create_task(self.process_refreshing_tokens(account, use_proxy)),
+                asyncio.create_task(self.process_get_connection_quality(account, use_proxy)),
+                asyncio.create_task(self.process_get_user_earning(account, use_proxy)),
+                asyncio.create_task(self.process_claim_daily_checkin(account, use_proxy)),
+                asyncio.create_task(self.process_complete_user_tasks(account, use_proxy))
+            ]
+            await asyncio.gather(*tasks)
+
+        else:
+            self.print_message(account, proxy, Fore.RED, "Refresh Token Expired, "
+                f"{Fore.YELLOW + Style.BRIGHT}Change it first.{Style.RESET_ALL}"
+            )
 
     async def main(self):
         try:
@@ -552,9 +562,8 @@ class Flow3:
                             account = self.decode_token(access_token, "email")
 
                             if account:
-                                self.access_tokens[account] = access_token
                                 self.refresh_tokens[account] = refresh_token
-
+                                self.access_tokens[account] = access_token
                                 tasks.append(asyncio.create_task(self.process_accounts(account, use_proxy)))
 
                 await asyncio.gather(*tasks)
