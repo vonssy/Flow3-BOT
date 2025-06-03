@@ -7,11 +7,10 @@ Register Here : [Flow3 Dashboard](https://app.flow3.tech/sign-up?ref=6AYewrGk3)
 ## Features
 
   - Auto Get Account Information
-  - Auto Run With [Monosans](https://raw.githubusercontent.com/monosans/proxy-list/main/proxies/all.txt) Proxy - Choose 1
-  - Auto Run With Private Proxy - Choose 2
-  - Auto Run Without Proxy - Choose 3
-  - Auto Get Connection Quality
-  - Auto Get Earning Data
+  - Auto Run With [Monosans](https://raw.githubusercontent.com/monosans/proxy-list/main/proxies/all.txt) Proxy - `Choose 1`
+  - Auto Run With Private Proxy - `Choose 2`
+  - Auto Run Without Proxy - `Choose 3`
+  - Auto Rotate Invalid Proxies - `y` or `n`
   - Auto Claim Daily Check-In
   - Auto Complete Available Tasks
   - Multi Accounts With Threads
@@ -36,6 +35,12 @@ Register Here : [Flow3 Dashboard](https://app.flow3.tech/sign-up?ref=6AYewrGk3)
    ```
 
 ## Configuration
+
+### Screenshots
+
+<div style="text-align: center;">
+  <img src="image.png" alt="Image" width="500"/>
+</div>
 
 - **tokens.txt:** You will find the file `tokens.txt` inside the project directory. Make sure `tokens.txt` contains data that matches the format expected by the script. Here are examples of file formats:
 

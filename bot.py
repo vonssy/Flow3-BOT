@@ -50,6 +50,26 @@ class Flow3:
         minutes, seconds = divmod(remainder, 60)
         return f"{int(hours):02}:{int(minutes):02}:{int(seconds):02}"
     
+    def save_new_tokens(self, old_token: str, new_token: str, filename="tokens.txt"):
+        try:
+            try:
+                with open(filename, "r") as f:
+                    tokens = [line.strip() for line in f.readlines()]
+            except FileNotFoundError:
+                tokens = []
+
+            if old_token in tokens:
+                tokens = [new_token if t == old_token else t for t in tokens]
+            else:
+                tokens.append(new_token)
+
+            with open(filename, "w") as f:
+                for t in tokens:
+                    f.write(t + "\n")
+
+        except Exception as e:
+            return None
+    
     async def load_proxies(self, use_proxy_choice: int):
         filename = "proxy.txt"
         try:
@@ -103,25 +123,6 @@ class Flow3:
          self.proxy_index = (self.proxy_index + 1) % len(self.proxies)
          return proxy
     
-    def save_new_token(self, account: str, tokens: dict):
-        try:
-            with open("tokens.txt", "r") as f:
-                current_tokens = [line.strip() for line in f if line.strip()]
-
-            updated_tokens = []
-            for token in current_tokens:
-                old_account = self.decode_token(self.decode_token(token, "accessToken"), "email")
-                if old_account == account:
-                    updated_tokens.append(tokens["refreshToken"])
-                else:
-                    updated_tokens.append(token)
-
-            with open("tokens.txt", "w") as f:
-                f.write("\n".join(updated_tokens) + "\n")
-
-        except Exception as e:
-            return None
-    
     def decode_token(self, token: str, key: str):
         try:
             header, payload, signature = token.split(".")
@@ -151,13 +152,12 @@ class Flow3:
             return f"{mask_account}@{domain}"
         
     def print_message(self, account, proxy, color, message):
-        proxy_value = proxy.get("http") if isinstance(proxy, dict) else proxy
         self.log(
             f"{Fore.CYAN + Style.BRIGHT}[ Account:{Style.RESET_ALL}"
             f"{Fore.WHITE + Style.BRIGHT} {self.mask_account(account)} {Style.RESET_ALL}"
             f"{Fore.MAGENTA + Style.BRIGHT}-{Style.RESET_ALL}"
             f"{Fore.CYAN + Style.BRIGHT} Proxy: {Style.RESET_ALL}"
-            f"{Fore.WHITE + Style.BRIGHT}{proxy_value}{Style.RESET_ALL}"
+            f"{Fore.WHITE + Style.BRIGHT}{proxy}{Style.RESET_ALL}"
             f"{Fore.MAGENTA + Style.BRIGHT} - {Style.RESET_ALL}"
             f"{Fore.CYAN + Style.BRIGHT}Status:{Style.RESET_ALL}"
             f"{color + Style.BRIGHT} {message} {Style.RESET_ALL}"
@@ -167,10 +167,10 @@ class Flow3:
     def print_question(self):
         while True:
             try:
-                print("1. Run With Monosans Proxy")
-                print("2. Run With Private Proxy")
-                print("3. Run Without Proxy")
-                choose = int(input("Choose [1/2/3] -> ").strip())
+                print(f"{Fore.WHITE + Style.BRIGHT}1. Run With Monosans Proxy{Style.RESET_ALL}")
+                print(f"{Fore.WHITE + Style.BRIGHT}2. Run With Private Proxy{Style.RESET_ALL}")
+                print(f"{Fore.WHITE + Style.BRIGHT}3. Run Without Proxy{Style.RESET_ALL}")
+                choose = int(input(f"{Fore.BLUE + Style.BRIGHT}Choose [1/2/3] -> {Style.RESET_ALL}").strip())
 
                 if choose in [1, 2, 3]:
                     proxy_type = (
@@ -179,289 +179,337 @@ class Flow3:
                         "Run Without Proxy"
                     )
                     print(f"{Fore.GREEN + Style.BRIGHT}{proxy_type} Selected.{Style.RESET_ALL}")
-                    return choose
+                    break
                 else:
                     print(f"{Fore.RED + Style.BRIGHT}Please enter either 1, 2 or 3.{Style.RESET_ALL}")
             except ValueError:
                 print(f"{Fore.RED + Style.BRIGHT}Invalid input. Enter a number (1, 2 or 3).{Style.RESET_ALL}")
+
+        rotate = False
+        if choose in [1, 2]:
+            while True:
+                rotate = input(f"{Fore.BLUE + Style.BRIGHT}Rotate Invalid Proxy? [y/n] -> {Style.RESET_ALL}").strip()
+
+                if rotate in ["y", "n"]:
+                    rotate = rotate == "y"
+                    break
+                else:
+                    print(f"{Fore.RED + Style.BRIGHT}Invalid input. Enter 'y' or 'n'.{Style.RESET_ALL}")
+
+        return choose, rotate
     
-    async def refresh_token(self, account: str, proxy=None, retries=5):
+    async def refresh_token(self, email: str, proxy=None, retries=5):
         url = f"{self.BASE_API}/user/refresh"
-        data = json.dumps({"refreshToken":self.refresh_tokens[account]})
+        data = json.dumps({"refreshToken":self.refresh_tokens[email]})
         headers = {
             **self.headers,
-            "Authorization": f"Bearer {self.refresh_tokens[account]}",
+            "Authorization": f"Bearer {self.refresh_tokens[email]}",
             "Content-Length": str(len(data)),
             "Content-Type": "application/json"
         }
         for attempt in range(retries):
             try:
-                response = await asyncio.to_thread(requests.post, url=url, headers=headers, data=data, proxy=proxy, timeout=120, impersonate="chrome110")
-                response.raise_for_status()
-                result = response.json()
-                return result['data']
-            except Exception as e:
-                if attempt < retries - 1:
-                    await asyncio.sleep(5)
-                    continue
-                return self.print_message(account, proxy, Fore.RED, f"Refreshing Tokens Failed: {Fore.YELLOW+Style.BRIGHT}{str(e)}")
-    
-    async def get_connection_quality(self, account: str, proxy=None, retries=5):
-        url = f"{self.BASE_API}/user/get-connection-quality"
-        headers = {
-            **self.headers,
-            "Authorization": f"Bearer {self.access_tokens[account]}",
-        }
-        for attempt in range(retries):
-            try:
-                response = await asyncio.to_thread(requests.get, url=url, headers=headers, proxy=proxy, timeout=120, impersonate="chrome110")
+                response = await asyncio.to_thread(requests.post, url=url, headers=headers, data=data, proxy=proxy, timeout=60, impersonate="chrome110")
+                if response.status_code == 500:
+                    return self.print_message(email, proxy, Fore.RED, f"Refreshing Tokens Failed: {Fore.YELLOW+Style.BRIGHT}Refresh Token Already Expired")
                 response.raise_for_status()
                 return response.json()
             except Exception as e:
                 if attempt < retries - 1:
                     await asyncio.sleep(5)
                     continue
-                return self.print_message(account, proxy, Fore.RED, f"GET Connection Quality Failed: {Fore.YELLOW+Style.BRIGHT}{str(e)}")
+                return self.print_message(email, proxy, Fore.RED, f"Refreshing Tokens Failed: {Fore.YELLOW+Style.BRIGHT}{str(e)}")
     
-    async def get_point_stats(self, account: str, proxy=None, retries=5):
+    async def get_connection_quality(self, email: str, proxy=None, retries=5):
+        url = f"{self.BASE_API}/user/get-connection-quality"
+        headers = {
+            **self.headers,
+            "Authorization": f"Bearer {self.access_tokens[email]}",
+        }
+        for attempt in range(retries):
+            try:
+                response = await asyncio.to_thread(requests.get, url=url, headers=headers, proxy=proxy, timeout=60, impersonate="chrome110")
+                response.raise_for_status()
+                return response.json()
+            except Exception as e:
+                if attempt < retries - 1:
+                    await asyncio.sleep(5)
+                    continue
+                return self.print_message(email, proxy, Fore.RED, f"Connection Not 200 OK: {Fore.YELLOW+Style.BRIGHT}{str(e)}")
+    
+    async def get_point_stats(self, email: str, proxy=None, retries=5):
         url = f"{self.BASE_API}/user/get-point-stats"
         headers = {
             **self.headers,
-            "Authorization": f"Bearer {self.access_tokens[account]}",
+            "Authorization": f"Bearer {self.access_tokens[email]}",
         }
         for attempt in range(retries):
             try:
-                response = await asyncio.to_thread(requests.get, url=url, headers=headers, proxy=proxy, timeout=120, impersonate="chrome110")
+                response = await asyncio.to_thread(requests.get, url=url, headers=headers, proxy=proxy, timeout=60, impersonate="chrome110")
                 response.raise_for_status()
-                result = response.json()
-                return result['data']
+                return response.json()
             except Exception as e:
                 if attempt < retries - 1:
                     await asyncio.sleep(5)
                     continue
-                return self.print_message(account, proxy, Fore.RED, f"GET Earning Data Failed: {Fore.YELLOW+Style.BRIGHT}{str(e)}")
+                return self.print_message(email, proxy, Fore.RED, f"GET Earning Stats Failed: {Fore.YELLOW+Style.BRIGHT}{str(e)}")
     
-    async def get_daily_checkin(self, account: str, proxy=None, retries=5):
+    async def get_daily_checkin(self, email: str, proxy=None, retries=5):
         url = f"{self.BASE_API}/task/get-user-task-daily"
         headers = {
             **self.headers,
-            "Authorization": f"Bearer {self.access_tokens[account]}",
+            "Authorization": f"Bearer {self.access_tokens[email]}",
         }
         for attempt in range(retries):
             try:
-                response = await asyncio.to_thread(requests.get, url=url, headers=headers, proxy=proxy, timeout=120, impersonate="chrome110")
+                response = await asyncio.to_thread(requests.get, url=url, headers=headers, proxy=proxy, timeout=60, impersonate="chrome110")
                 response.raise_for_status()
-                result = response.json()
-                return result['data']
+                return response.json()
             except Exception as e:
                 if attempt < retries - 1:
                     await asyncio.sleep(5)
                     continue
-                return self.print_message(account, proxy, Fore.RED, f"GET Daily Check-In Data Failed: {Fore.YELLOW+Style.BRIGHT}{str(e)}")
+                return self.print_message(email, proxy, Fore.RED, f"GET Check-In Status Failed: {Fore.YELLOW+Style.BRIGHT}{str(e)}")
     
-    async def claim_daily_checkin(self, account: str, task_id: str, title: str, proxy=None, retries=5):
+    async def claim_daily_checkin(self, email: str, task_id: str, title: str, proxy=None, retries=5):
         url = f"{self.BASE_API}/task/daily-check-in"
         data = json.dumps({"taskId":task_id})
         headers = {
             **self.headers,
-            "Authorization": f"Bearer {self.access_tokens[account]}",
+            "Authorization": f"Bearer {self.access_tokens[email]}",
             "Content-Length": str(len(data)),
             "Content-Type": "application/json"
         }
         for attempt in range(retries):
             try:
-                response = await asyncio.to_thread(requests.post, url=url, headers=headers, data=data, proxy=proxy, timeout=120, impersonate="chrome110")
+                response = await asyncio.to_thread(requests.post, url=url, headers=headers, data=data, proxy=proxy, timeout=60, impersonate="chrome110")
                 response.raise_for_status()
                 return response.json()
             except Exception as e:
                 if attempt < retries - 1:
                     await asyncio.sleep(5)
                     continue
-                return self.print_message(account, proxy, Fore.RED, f"{title}"
+                return self.print_message(email, proxy, Fore.RED, f"{title}"
                     f"{Fore.RED+Style.BRIGHT} Not Claimed: {Style.RESET_ALL}"
                     f"{Fore.YELLOW+Style.BRIGHT}{str(e)}{Style.RESET_ALL}"
                 )
     
-    async def get_user_task(self, account: str, proxy=None, retries=5):
+    async def get_user_task(self, email: str, proxy=None, retries=5):
         url = f"{self.BASE_API}/task/get-user-task"
         headers = {
             **self.headers,
-            "Authorization": f"Bearer {self.access_tokens[account]}",
+            "Authorization": f"Bearer {self.access_tokens[email]}",
         }
         for attempt in range(retries):
             try:
-                response = await asyncio.to_thread(requests.get, url=url, headers=headers, proxy=proxy, timeout=120, impersonate="chrome110")
-                response.raise_for_status()
-                result = response.json()
-                return result['data']
-            except Exception as e:
-                if attempt < retries - 1:
-                    await asyncio.sleep(5)
-                    continue
-                return self.print_message(account, proxy, Fore.RED, f"GET Daily Check-In Data Failed: {Fore.YELLOW+Style.BRIGHT}{str(e)}")
-    
-    async def do_task(self, account: str, task_id: str, title: str, proxy=None, retries=5):
-        url = f"{self.BASE_API}/task/do-task"
-        data = json.dumps({"taskId":task_id})
-        headers = {
-            **self.headers,
-            "Authorization": f"Bearer {self.access_tokens[account]}",
-            "Content-Length": str(len(data)),
-            "Content-Type": "application/json"
-        }
-        for attempt in range(retries):
-            try:
-                response = await asyncio.to_thread(requests.post, url=url, headers=headers, data=data, proxy=proxy, timeout=120, impersonate="chrome110")
+                response = await asyncio.to_thread(requests.get, url=url, headers=headers, proxy=proxy, timeout=60, impersonate="chrome110")
                 response.raise_for_status()
                 return response.json()
             except Exception as e:
                 if attempt < retries - 1:
                     await asyncio.sleep(5)
                     continue
-                return self.print_message(account, proxy, Fore.BLUE, "Perform Task "
+                return self.print_message(email, proxy, Fore.RED, f"GET Task Lists Failed: {Fore.YELLOW+Style.BRIGHT}{str(e)}")
+    
+    async def do_task(self, email: str, task_id: str, title: str, proxy=None, retries=5):
+        url = f"{self.BASE_API}/task/do-task"
+        data = json.dumps({"taskId":task_id})
+        headers = {
+            **self.headers,
+            "Authorization": f"Bearer {self.access_tokens[email]}",
+            "Content-Length": str(len(data)),
+            "Content-Type": "application/json"
+        }
+        for attempt in range(retries):
+            try:
+                response = await asyncio.to_thread(requests.post, url=url, headers=headers, data=data, proxy=proxy, timeout=60, impersonate="chrome110")
+                response.raise_for_status()
+                return response.json()
+            except Exception as e:
+                if attempt < retries - 1:
+                    await asyncio.sleep(5)
+                    continue
+                return self.print_message(email, proxy, Fore.BLUE, "Perform Task "
                     f"{Fore.WHITE+Style.BRIGHT}{title}{Style.RESET_ALL}"
                     f"{Fore.RED+Style.BRIGHT} Failed: {Style.RESET_ALL}"
                     f"{Fore.YELLOW+Style.BRIGHT}{str(e)}{Style.RESET_ALL}"
                 )
     
-    async def claim_task(self, account: str, task_id: str, title: str, proxy=None, retries=5):
+    async def claim_task(self, email: str, task_id: str, title: str, proxy=None, retries=5):
         url = f"{self.BASE_API}/task/claim-task"
         data = json.dumps({"taskId":task_id})
         headers = {
             **self.headers,
-            "Authorization": f"Bearer {self.access_tokens[account]}",
+            "Authorization": f"Bearer {self.access_tokens[email]}",
             "Content-Length": str(len(data)),
             "Content-Type": "application/json"
         }
         for attempt in range(retries):
             try:
-                response = await asyncio.to_thread(requests.post, url=url, headers=headers, data=data, proxy=proxy, timeout=120, impersonate="chrome110")
+                response = await asyncio.to_thread(requests.post, url=url, headers=headers, data=data, proxy=proxy, timeout=60, impersonate="chrome110")
                 response.raise_for_status()
                 return response.json()
             except Exception as e:
                 if attempt < retries - 1:
                     await asyncio.sleep(5)
                     continue
-                return self.print_message(account, proxy, Fore.BLUE, "Task "
+                return self.print_message(email, proxy, Fore.BLUE, "Task "
                     f"{Fore.WHITE+Style.BRIGHT}{title}{Style.RESET_ALL}"
                     f"{Fore.RED+Style.BRIGHT} Not Claimed: {Style.RESET_ALL}"
                     f"{Fore.YELLOW+Style.BRIGHT}{str(e)}{Style.RESET_ALL}"
                 )
-    
-    async def process_refreshing_tokens(self, account: str, use_proxy: bool):
+            
+    async def process_refresh_token(self, email: str, use_proxy: bool, rotate_proxy: bool):
+        proxy = self.get_next_proxy_for_account(email) if use_proxy else None
+        
+        if rotate_proxy:
+            while True:
+                refresh = await self.refresh_token(email, proxy)
+                if refresh and refresh.get("result") == "success":
+                    access_token = refresh["data"]["accessToken"]
+                    refresh_token = refresh["data"]["refreshToken"]
+
+                    self.save_new_tokens(self.refresh_tokens[email], refresh_token)
+
+                    self.access_tokens[email] = access_token
+                    self.refresh_tokens[email] = refresh_token
+
+                    self.print_message(email, proxy, Fore.GREEN, "Refreshing Tokens Success")
+                    return True
+
+                proxy = self.rotate_proxy_for_account(email) if use_proxy else None
+                await asyncio.sleep(5)
+                continue
+                
+        while True:
+            refresh = await self.refresh_token(email, proxy)
+            if refresh and refresh.get("result") == "success":
+                access_token = refresh["data"]["accessToken"]
+                refresh_token = refresh["data"]["refreshToken"]
+
+                self.save_new_tokens(self.refresh_tokens[email], refresh_token)
+
+                self.access_tokens[email] = access_token
+                self.refresh_tokens[email] = refresh_token
+
+                self.print_message(email, proxy, Fore.GREEN, "Refreshing Tokens Success")
+                return True
+
+            await asyncio.sleep(5)
+            continue
+
+    async def looping_refresh_token(self, email: str, use_proxy: bool, rotate_proxy: bool):
         while True:
             await asyncio.sleep(55 * 60)
+            await self.process_refresh_token(email, use_proxy, rotate_proxy)
+            
+    async def process_get_connection_quality(self, email: str, use_proxy: bool, rotate_proxy: bool):
+        proxy = self.get_next_proxy_for_account(email) if use_proxy else None
+        
+        if rotate_proxy:
+            while True:
+                is_valid = await self.get_connection_quality(email, proxy)
+                if is_valid:
+                    quality = is_valid.get("data", 0) or "N/A"
 
-            proxy = self.get_next_proxy_for_account(account) if use_proxy else None
-            tokens = None
-            while tokens is None:
-                tokens = await self.refresh_token(account, proxy)
-                if not tokens:
-                    proxy = self.rotate_proxy_for_account(account) if use_proxy else None
-                    await asyncio.sleep(5)
-                    continue
+                    self.print_message(email, proxy, Fore.GREEN, "Connection Quality: "
+                        f"{Fore.WHITE + Style.BRIGHT}{quality}{Style.RESET_ALL}"
+                    )
+                    return True
+
+                proxy = self.rotate_proxy_for_account(email) if use_proxy else None
+                await asyncio.sleep(5)
+                continue
                 
-                self.access_tokens[account] = tokens["accessToken"]
-                self.refresh_tokens[account] = tokens["refreshToken"]
-                self.print_message(account, proxy, Fore.GREEN, "Refreshing Tokens Success")
-                self.save_new_token(account, tokens)
-        
-    async def process_get_connection_quality(self, account: str, use_proxy: bool):
         while True:
-            proxy = self.get_next_proxy_for_account(account) if use_proxy else None
+            is_valid = await self.get_connection_quality(email, proxy)
+            if is_valid:
+                quality = is_valid.get("data", 0) or "N/A"
 
-            quality = "N/A"
+                self.print_message(email, proxy, Fore.GREEN, "Connection Quality: "
+                    f"{Fore.WHITE + Style.BRIGHT}{quality}{Style.RESET_ALL}"
+                )
+                return True
 
-            connection = await self.get_connection_quality(account, proxy)
-            if connection:
-                quality = connection.get("data", 0)
+            await asyncio.sleep(5)
+            continue
 
-            self.print_message(account, proxy, Fore.BLUE, "Connection Quality: "
-                f"{Fore.WHITE + Style.BRIGHT}{quality}{Style.RESET_ALL}"
-            )
-
-            await asyncio.sleep(0.5 * 60)
-        
-    async def process_get_user_earning(self, account: str, use_proxy: bool):
+    async def looping_get_connection_quality(self, email: str, use_proxy: bool, rotate_proxy: bool):
         while True:
-            proxy = self.get_next_proxy_for_account(account) if use_proxy else None
+            await asyncio.sleep(30)
+            await self.process_get_connection_quality(email, use_proxy, rotate_proxy)
 
-            earning_today = "N/A"
-            earning_total = "N/A"
+    async def process_get_user_earning(self, email: str, use_proxy: bool):
+        while True:
+            proxy = self.get_next_proxy_for_account(email) if use_proxy else None
 
-            point_stats = await self.get_point_stats(account, proxy)
-            if point_stats:
-                today_point = float(point_stats.get("todayPointEarned", 0))
-                total_point = float(point_stats.get("totalPointEarned", 0))
+            stats = await self.get_point_stats(email, proxy)
+            if stats and stats.get("result") == "success":
+                today_point = float(stats.get("data", {}).get("todayPointEarned")) or "N/A"
+                total_point = float(stats.get("data", {}).get("totalPointEarned")) or "N/A"
 
-                earning_today = f"{today_point:.2f} PTS"
-                earning_total = f"{total_point:.2f} PTS"
-
-            self.print_message(account, proxy, Fore.BLUE, "Earning Today:"
-                f"{Fore.WHITE + Style.BRIGHT} {earning_today} {Style.RESET_ALL}"
-                f"{Fore.MAGENTA + Style.BRIGHT}-{Style.RESET_ALL}"
-                f"{Fore.BLUE + Style.BRIGHT} Earning Total: {Style.RESET_ALL}"
-                f"{Fore.WHITE + Style.BRIGHT}{earning_total}{Style.RESET_ALL}"
-            )
+                self.print_message(email, proxy, Fore.BLUE, "Earning Today:"
+                    f"{Fore.WHITE + Style.BRIGHT} {today_point:.2f} PTS {Style.RESET_ALL}"
+                    f"{Fore.MAGENTA + Style.BRIGHT}-{Style.RESET_ALL}"
+                    f"{Fore.BLUE + Style.BRIGHT} Earning Total: {Style.RESET_ALL}"
+                    f"{Fore.WHITE + Style.BRIGHT}{total_point:.2f} PTS{Style.RESET_ALL}"
+                )
 
             await asyncio.sleep(15 * 60)
 
-    async def process_claim_daily_checkin(self, account: str, use_proxy: bool):
+    async def process_claim_daily_checkin(self, email: str, use_proxy: bool):
         while True:
-            proxy = self.get_next_proxy_for_account(account) if use_proxy else None
+            proxy = self.get_next_proxy_for_account(email) if use_proxy else None
 
-            daily_checkin = await self.get_daily_checkin(account, proxy)
+            daily_checkin = await self.get_daily_checkin(email, proxy)
             if daily_checkin:
-                completed = False
-                for task in daily_checkin:
-                    if task:
+                task_lists = daily_checkin.get("data", [])
+
+                if task_lists:
+                    for task in task_lists:
                         task_id = task["_id"]
                         title = task["name"]
                         reward = task["pointAmount"]
                         status = task["status"]
-
+            
                         if status == "idle":
-                            claim = await self.claim_daily_checkin(account, task_id, title, proxy)
+                            claim = await self.claim_daily_checkin(email, task_id, title, proxy)
                             if claim and claim.get("result") == "success":
-                                self.print_message(account, proxy, Fore.WHITE, f"{title}"
+                                self.print_message(email, proxy, Fore.WHITE, f"{title}"
                                     f"{Fore.GREEN + Style.BRIGHT} Is Claimed {Style.RESET_ALL}"
                                     f"{Fore.MAGENTA + Style.BRIGHT}-{Style.RESET_ALL}"
                                     f"{Fore.CYAN + Style.BRIGHT} Reward: {Style.RESET_ALL}"
                                     f"{Fore.WHITE + Style.BRIGHT}{reward} PTS{Style.RESET_ALL}"
                                 )
-                        else:
-                            completed = True
 
-                if completed:
-                    self.print_message(account, proxy, Fore.GREEN, "Process Check-In Completed")
+            await asyncio.sleep(24 * 60 * 60)
 
-            await asyncio.sleep(12 * 60 * 60)
-
-    async def process_complete_user_tasks(self, account: str, use_proxy: bool):
+    async def process_complete_available_tasks(self, email: str, use_proxy: bool):
         while True:
-            proxy = self.get_next_proxy_for_account(account) if use_proxy else None
+            proxy = self.get_next_proxy_for_account(email) if use_proxy else None
 
-            tasks = await self.get_user_task(account, proxy)
-            if tasks:
-                for task in tasks:
-                    completed = False
-                    if task:
+            task_lists = await self.get_user_task(email, proxy)
+            if task_lists:
+                tasks = task_lists.get("data", [])
+
+                if tasks:
+                    for task in tasks:
                         task_id = task["_id"]
                         title = task["name"]
                         reward = task["pointAmount"]
                         status = task["status"]
-
+            
                         if status == "idle":
-                            perform = await self.do_task(account, task_id, title, proxy)
+                            perform = await self.do_task(email, task_id, title, proxy)
                             if perform and perform.get("result") == "success":
-                                self.print_message(account, proxy, Fore.BLUE, "Perform Task"
+                                self.print_message(email, proxy, Fore.BLUE, "Perform Task"
                                     f"{Fore.WHITE + Style.BRIGHT} {title} {Style.RESET_ALL}"
                                     f"{Fore.GREEN + Style.BRIGHT}Success{Style.RESET_ALL}"
                                 )
 
-                                claim = await self.claim_task(account, task_id, title, proxy)
+                                claim = await self.claim_task(email, task_id, title, proxy)
                                 if claim and claim.get("result") == "success":
-                                    self.print_message(account, proxy, Fore.BLUE, "Task "
+                                    self.print_message(email, proxy, Fore.BLUE, "Task "
                                         f"{Fore.WHITE + Style.BRIGHT}{title}{Style.RESET_ALL}"
                                         f"{Fore.GREEN + Style.BRIGHT} Is Claimed {Style.RESET_ALL}"
                                         f"{Fore.MAGENTA + Style.BRIGHT}-{Style.RESET_ALL}"
@@ -470,9 +518,9 @@ class Flow3:
                                     )
 
                         elif status == "pending":
-                            claim = await self.claim_task(account, task_id, title, proxy)
+                            claim = await self.claim_task(email, task_id, title, proxy)
                             if claim and claim.get("result") == "success":
-                                self.print_message(account, proxy, Fore.BLUE, "Task "
+                                self.print_message(email, proxy, Fore.BLUE, "Task "
                                     f"{Fore.WHITE + Style.BRIGHT}{title}{Style.RESET_ALL}"
                                     f"{Fore.GREEN + Style.BRIGHT} Is Claimed {Style.RESET_ALL}"
                                     f"{Fore.MAGENTA + Style.BRIGHT}-{Style.RESET_ALL}"
@@ -480,61 +528,40 @@ class Flow3:
                                     f"{Fore.WHITE + Style.BRIGHT}{reward} PTS{Style.RESET_ALL}"
                                 )
 
-                        else:
-                            completed = True
-
-                if completed:
-                    self.print_message(account, proxy, Fore.GREEN, "Process Perform & Claim Tasks Completed")
-
             await asyncio.sleep(24 * 60 * 60)
-        
-    async def process_accounts(self, account: str, use_proxy: bool):
-        proxy = self.get_next_proxy_for_account(account) if use_proxy else None
 
-        exp_refresh = self.get_token_exp_time(self.refresh_tokens[account])
-        exp_access = self.get_token_exp_time(self.access_tokens[account])
-        
-        if exp_refresh >= int(time.time()):
-            self.print_message(account, proxy, Fore.GREEN, "Token Valid")
+    async def process_accounts(self, email: str, use_proxy: bool, rotate_proxy: bool):
+        exp_time = self.decode_token(self.access_tokens[email], "exp")
+        if int(time.time()) > exp_time:
+            self.log(
+                f"{Fore.CYAN + Style.BRIGHT}[ Account: {Style.RESET_ALL}"
+                f"{Fore.WHITE + Style.BRIGHT}{self.mask_account(email)}{Style.RESET_ALL}"
+                f"{Fore.MAGENTA + Style.BRIGHT} - {Style.RESET_ALL}"
+                f"{Fore.CYAN + Style.BRIGHT}Status:{Style.RESET_ALL}"
+                f"{Fore.RED + Style.BRIGHT} Access Token Already Expired, {Style.RESET_ALL}"
+                f"{Fore.MAGENTA + Style.BRIGHT}-{Style.RESET_ALL}"
+                f"{Fore.YELLOW + Style.BRIGHT} Refreshing... {Style.RESET_ALL}"
+                f"{Fore.CYAN + Style.BRIGHT}]{Style.RESET_ALL}"
+            )
+            await self.process_refresh_token(email, use_proxy, rotate_proxy)
 
-            if exp_access < int(time.time()):
-                self.print_message(account, proxy, Fore.RED, "Access Token Expired, "
-                    f"{Fore.YELLOW + Style.BRIGHT}Refreshing...{Style.RESET_ALL}"
-                )
-
-                tokens = None
-                while tokens is None:
-                    tokens = await self.refresh_token(account, proxy)
-                    if not tokens:
-                        proxy = self.rotate_proxy_for_account(account) if use_proxy else None
-                        await asyncio.sleep(5)
-                        continue
-                    
-                    self.access_tokens[account] = tokens["accessToken"]
-                    self.refresh_tokens[account] = tokens["refreshToken"]
-                    self.print_message(account, proxy, Fore.GREEN, "Refreshing Tokens Success")
-                    self.save_new_token(account, tokens)
-
+        is_valid = await self.process_get_connection_quality(email, use_proxy, rotate_proxy)
+        if is_valid:
             tasks = [
-                asyncio.create_task(self.process_refreshing_tokens(account, use_proxy)),
-                asyncio.create_task(self.process_get_connection_quality(account, use_proxy)),
-                asyncio.create_task(self.process_get_user_earning(account, use_proxy)),
-                asyncio.create_task(self.process_claim_daily_checkin(account, use_proxy)),
-                asyncio.create_task(self.process_complete_user_tasks(account, use_proxy))
+                asyncio.create_task(self.looping_refresh_token(email, use_proxy, rotate_proxy)),
+                asyncio.create_task(self.looping_get_connection_quality(email, use_proxy, rotate_proxy)),
+                asyncio.create_task(self.process_get_user_earning(email, use_proxy)),
+                asyncio.create_task(self.process_claim_daily_checkin(email, use_proxy)),
+                asyncio.create_task(self.process_complete_available_tasks(email, use_proxy))
             ]
             await asyncio.gather(*tasks)
-
-        else:
-            self.print_message(account, proxy, Fore.RED, "Refresh Token Expired, "
-                f"{Fore.YELLOW + Style.BRIGHT}Change it first.{Style.RESET_ALL}"
-            )
 
     async def main(self):
         try:
             with open('tokens.txt', 'r') as file:
                 tokens = [line.strip() for line in file if line.strip()]
             
-            use_proxy_choice = self.print_question()
+            use_proxy_choice, rotate_proxy = self.print_question()
 
             use_proxy = False
             if use_proxy_choice in [1, 2]:
@@ -550,24 +577,36 @@ class Flow3:
             if use_proxy:
                 await self.load_proxies(use_proxy_choice)
 
-            self.log(f"{Fore.CYAN + Style.BRIGHT}-{Style.RESET_ALL}"*75)
+            self.log(f"{Fore.CYAN + Style.BRIGHT}={Style.RESET_ALL}"*75)
             
-            while True:
-                tasks = []
-                for refresh_token in tokens:
-                    if refresh_token:
-                        access_token = self.decode_token(refresh_token, "accessToken")
+            tasks = []
+            for refresh_token in tokens:
+                if refresh_token:
+                    access_token = self.decode_token(refresh_token, "accessToken")
 
-                        if access_token:
-                            account = self.decode_token(access_token, "email")
+                    if not access_token:
+                        continue
 
-                            if account:
-                                self.refresh_tokens[account] = refresh_token
-                                self.access_tokens[account] = access_token
-                                tasks.append(asyncio.create_task(self.process_accounts(account, use_proxy)))
+                    email = self.decode_token(access_token, "email")
 
-                await asyncio.gather(*tasks)
-                await asyncio.sleep(10)
+                    exp_time = self.decode_token(refresh_token, "exp")
+                    if int(time.time()) > exp_time:
+                        self.log(
+                            f"{Fore.CYAN + Style.BRIGHT}[ Account: {Style.RESET_ALL}"
+                            f"{Fore.WHITE + Style.BRIGHT}{self.mask_account(email)}{Style.RESET_ALL}"
+                            f"{Fore.MAGENTA + Style.BRIGHT} - {Style.RESET_ALL}"
+                            f"{Fore.CYAN + Style.BRIGHT}Status:{Style.RESET_ALL}"
+                            f"{Fore.RED + Style.BRIGHT} Refresh Token Already Expired {Style.RESET_ALL}"
+                            f"{Fore.CYAN + Style.BRIGHT}]{Style.RESET_ALL}"
+                        )
+                        continue
+
+                    self.refresh_tokens[email] = refresh_token
+                    self.access_tokens[email] = access_token
+                    
+                    tasks.append(asyncio.create_task(self.process_accounts(email, use_proxy, rotate_proxy)))
+
+            await asyncio.gather(*tasks)
 
         except FileNotFoundError:
             self.log(f"{Fore.RED}File 'tokens.txt' Not Found.{Style.RESET_ALL}")
