@@ -50,7 +50,8 @@ class Flow3:
         minutes, seconds = divmod(remainder, 60)
         return f"{int(hours):02}:{int(minutes):02}:{int(seconds):02}"
     
-    def save_new_tokens(self, old_token: str, new_token: str, filename="tokens.txt"):
+    def save_new_tokens(self, old_token: str, new_token: str):
+        filename = "tokens.txt"
         try:
             try:
                 with open(filename, "r") as f:
@@ -74,18 +75,18 @@ class Flow3:
         filename = "proxy.txt"
         try:
             if use_proxy_choice == 1:
-                response = await asyncio.to_thread(requests.get, "https://raw.githubusercontent.com/monosans/proxy-list/main/proxies/all.txt")
+                response = await asyncio.to_thread(requests.get, "https://api.proxyscrape.com/v4/free-proxy-list/get?request=display_proxies&proxy_format=protocolipport&format=text")
                 response.raise_for_status()
                 content = response.text
                 with open(filename, 'w') as f:
                     f.write(content)
-                self.proxies = content.splitlines()
+                self.proxies = [line.strip() for line in content.splitlines() if line.strip()]
             else:
                 if not os.path.exists(filename):
                     self.log(f"{Fore.RED + Style.BRIGHT}File {filename} Not Found.{Style.RESET_ALL}")
                     return
                 with open(filename, 'r') as f:
-                    self.proxies = f.read().splitlines()
+                    self.proxies = [line.strip() for line in f.read().splitlines() if line.strip()]
             
             if not self.proxies:
                 self.log(f"{Fore.RED + Style.BRIGHT}No Proxies Found.{Style.RESET_ALL}")
@@ -134,17 +135,6 @@ class Flow3:
         except Exception as e:
             return None
     
-    def get_token_exp_time(self, token: str):
-        try:
-            header, payload, signature = token.split(".")
-            decoded_payload = base64.urlsafe_b64decode(payload + "==").decode("utf-8")
-            parsed_payload = json.loads(decoded_payload)
-            exp_time = parsed_payload["exp"]
-
-            return exp_time
-        except Exception as e:
-            return None
-    
     def mask_account(self, account):
         if "@" in account:
             local, domain = account.split('@', 1)
@@ -167,18 +157,18 @@ class Flow3:
     def print_question(self):
         while True:
             try:
-                print(f"{Fore.WHITE + Style.BRIGHT}1. Run With Monosans Proxy{Style.RESET_ALL}")
+                print(f"{Fore.WHITE + Style.BRIGHT}1. Run With Free Proxyscrape Proxy{Style.RESET_ALL}")
                 print(f"{Fore.WHITE + Style.BRIGHT}2. Run With Private Proxy{Style.RESET_ALL}")
                 print(f"{Fore.WHITE + Style.BRIGHT}3. Run Without Proxy{Style.RESET_ALL}")
                 choose = int(input(f"{Fore.BLUE + Style.BRIGHT}Choose [1/2/3] -> {Style.RESET_ALL}").strip())
 
                 if choose in [1, 2, 3]:
                     proxy_type = (
-                        "Run With Monosans Proxy" if choose == 1 else 
-                        "Run With Private Proxy" if choose == 2 else 
-                        "Run Without Proxy"
+                        "With Free Proxyscrape" if choose == 1 else 
+                        "With Private" if choose == 2 else 
+                        "Without"
                     )
-                    print(f"{Fore.GREEN + Style.BRIGHT}{proxy_type} Selected.{Style.RESET_ALL}")
+                    print(f"{Fore.GREEN + Style.BRIGHT}Run {proxy_type} Proxy Selected.{Style.RESET_ALL}")
                     break
                 else:
                     print(f"{Fore.RED + Style.BRIGHT}Please enter either 1, 2 or 3.{Style.RESET_ALL}")
@@ -360,28 +350,9 @@ class Flow3:
                 )
             
     async def process_refresh_token(self, email: str, use_proxy: bool, rotate_proxy: bool):
-        proxy = self.get_next_proxy_for_account(email) if use_proxy else None
-        
-        if rotate_proxy:
-            while True:
-                refresh = await self.refresh_token(email, proxy)
-                if refresh and refresh.get("result") == "success":
-                    access_token = refresh["data"]["accessToken"]
-                    refresh_token = refresh["data"]["refreshToken"]
-
-                    self.save_new_tokens(self.refresh_tokens[email], refresh_token)
-
-                    self.access_tokens[email] = access_token
-                    self.refresh_tokens[email] = refresh_token
-
-                    self.print_message(email, proxy, Fore.GREEN, "Refreshing Tokens Success")
-                    return True
-
-                proxy = self.rotate_proxy_for_account(email) if use_proxy else None
-                await asyncio.sleep(5)
-                continue
-                
         while True:
+            proxy = self.get_next_proxy_for_account(email) if use_proxy else None
+
             refresh = await self.refresh_token(email, proxy)
             if refresh and refresh.get("result") == "success":
                 access_token = refresh["data"]["accessToken"]
@@ -394,9 +365,23 @@ class Flow3:
 
                 self.print_message(email, proxy, Fore.GREEN, "Refreshing Tokens Success")
                 return True
+            
+            if rotate_proxy:
+                proxy = self.rotate_proxy_for_account(email)
 
             await asyncio.sleep(5)
             continue
+
+    async def check_token_exp_time(self, email: str, use_proxy: bool, rotate_proxy: bool):
+        exp_time = self.decode_token(self.access_tokens[email], "exp")
+
+        if int(time.time()) > exp_time:
+            proxy = self.get_next_proxy_for_account(email) if use_proxy else None
+
+            self.print_message(email, proxy, Fore.YELLOW, "Access Token Expired, Refreshing...")
+            await self.process_refresh_token(email, use_proxy, rotate_proxy)
+
+        return True
 
     async def looping_refresh_token(self, email: str, use_proxy: bool, rotate_proxy: bool):
         while True:
@@ -404,10 +389,11 @@ class Flow3:
             await self.process_refresh_token(email, use_proxy, rotate_proxy)
             
     async def process_get_connection_quality(self, email: str, use_proxy: bool, rotate_proxy: bool):
-        proxy = self.get_next_proxy_for_account(email) if use_proxy else None
-        
-        if rotate_proxy:
+        is_valid = await self.check_token_exp_time(email, use_proxy, rotate_proxy)
+        if is_valid:
             while True:
+                proxy = self.get_next_proxy_for_account(email) if use_proxy else None
+
                 is_valid = await self.get_connection_quality(email, proxy)
                 if is_valid:
                     quality = is_valid.get("data", 0) or "N/A"
@@ -416,23 +402,12 @@ class Flow3:
                         f"{Fore.WHITE + Style.BRIGHT}{quality}{Style.RESET_ALL}"
                     )
                     return True
+                
+                if rotate_proxy:
+                    proxy = self.rotate_proxy_for_account(email)
 
-                proxy = self.rotate_proxy_for_account(email) if use_proxy else None
                 await asyncio.sleep(5)
                 continue
-                
-        while True:
-            is_valid = await self.get_connection_quality(email, proxy)
-            if is_valid:
-                quality = is_valid.get("data", 0) or "N/A"
-
-                self.print_message(email, proxy, Fore.GREEN, "Connection Quality: "
-                    f"{Fore.WHITE + Style.BRIGHT}{quality}{Style.RESET_ALL}"
-                )
-                return True
-
-            await asyncio.sleep(5)
-            continue
 
     async def looping_get_connection_quality(self, email: str, use_proxy: bool, rotate_proxy: bool):
         while True:
@@ -466,6 +441,8 @@ class Flow3:
                 task_lists = daily_checkin.get("data", [])
 
                 if task_lists:
+                    completed = False
+
                     for task in task_lists:
                         task_id = task["_id"]
                         title = task["name"]
@@ -481,6 +458,11 @@ class Flow3:
                                     f"{Fore.CYAN + Style.BRIGHT} Reward: {Style.RESET_ALL}"
                                     f"{Fore.WHITE + Style.BRIGHT}{reward} PTS{Style.RESET_ALL}"
                                 )
+                        else:
+                            completed = True
+
+                    if completed:
+                        self.print_message(email, proxy, Fore.GREEN, "Check-In Completed")
 
             await asyncio.sleep(24 * 60 * 60)
 
@@ -493,6 +475,8 @@ class Flow3:
                 tasks = task_lists.get("data", [])
 
                 if tasks:
+                    completed = False
+
                     for task in tasks:
                         task_id = task["_id"]
                         title = task["name"]
@@ -528,23 +512,15 @@ class Flow3:
                                     f"{Fore.WHITE + Style.BRIGHT}{reward} PTS{Style.RESET_ALL}"
                                 )
 
+                        else:
+                            completed = True
+
+                    if completed:
+                        self.print_message(email, proxy, Fore.GREEN, "All Available Tasks Is Completed")
+
             await asyncio.sleep(24 * 60 * 60)
 
     async def process_accounts(self, email: str, use_proxy: bool, rotate_proxy: bool):
-        exp_time = self.decode_token(self.access_tokens[email], "exp")
-        if int(time.time()) > exp_time:
-            self.log(
-                f"{Fore.CYAN + Style.BRIGHT}[ Account: {Style.RESET_ALL}"
-                f"{Fore.WHITE + Style.BRIGHT}{self.mask_account(email)}{Style.RESET_ALL}"
-                f"{Fore.MAGENTA + Style.BRIGHT} - {Style.RESET_ALL}"
-                f"{Fore.CYAN + Style.BRIGHT}Status:{Style.RESET_ALL}"
-                f"{Fore.RED + Style.BRIGHT} Access Token Already Expired, {Style.RESET_ALL}"
-                f"{Fore.MAGENTA + Style.BRIGHT}-{Style.RESET_ALL}"
-                f"{Fore.YELLOW + Style.BRIGHT} Refreshing... {Style.RESET_ALL}"
-                f"{Fore.CYAN + Style.BRIGHT}]{Style.RESET_ALL}"
-            )
-            await self.process_refresh_token(email, use_proxy, rotate_proxy)
-
         is_valid = await self.process_get_connection_quality(email, use_proxy, rotate_proxy)
         if is_valid:
             tasks = [
@@ -559,7 +535,7 @@ class Flow3:
     async def main(self):
         try:
             with open('tokens.txt', 'r') as file:
-                tokens = [line.strip() for line in file if line.strip()]
+                refresh_tokens = [line.strip() for line in file if line.strip()]
             
             use_proxy_choice, rotate_proxy = self.print_question()
 
@@ -571,7 +547,7 @@ class Flow3:
             self.welcome()
             self.log(
                 f"{Fore.GREEN + Style.BRIGHT}Account's Total: {Style.RESET_ALL}"
-                f"{Fore.WHITE + Style.BRIGHT}{len(tokens)}{Style.RESET_ALL}"
+                f"{Fore.WHITE + Style.BRIGHT}{len(refresh_tokens)}{Style.RESET_ALL}"
             )
 
             if use_proxy:
@@ -580,11 +556,19 @@ class Flow3:
             self.log(f"{Fore.CYAN + Style.BRIGHT}={Style.RESET_ALL}"*75)
             
             tasks = []
-            for refresh_token in tokens:
+            for idx, refresh_token in enumerate(refresh_tokens, start=1):
                 if refresh_token:
                     access_token = self.decode_token(refresh_token, "accessToken")
 
                     if not access_token:
+                        self.log(
+                            f"{Fore.CYAN + Style.BRIGHT}[ Account: {Style.RESET_ALL}"
+                            f"{Fore.WHITE + Style.BRIGHT}{idx}{Style.RESET_ALL}"
+                            f"{Fore.MAGENTA + Style.BRIGHT} - {Style.RESET_ALL}"
+                            f"{Fore.CYAN + Style.BRIGHT}Status:{Style.RESET_ALL}"
+                            f"{Fore.RED + Style.BRIGHT} Invalid Refresh Token {Style.RESET_ALL}"
+                            f"{Fore.CYAN + Style.BRIGHT}]{Style.RESET_ALL}"
+                        )
                         continue
 
                     email = self.decode_token(access_token, "email")
