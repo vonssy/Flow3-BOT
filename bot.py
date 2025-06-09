@@ -199,16 +199,19 @@ class Flow3:
         }
         for attempt in range(retries):
             try:
-                response = await asyncio.to_thread(requests.post, url=url, headers=headers, data=data, proxy=proxy, timeout=60, impersonate="chrome110")
+                response = await asyncio.to_thread(requests.post, url=url, headers=headers, data=data, proxy=proxy, timeout=60, impersonate="chrome110", verify=False)
                 if response.status_code == 500:
-                    return self.print_message(email, proxy, Fore.RED, f"Refreshing Tokens Failed: {Fore.YELLOW+Style.BRIGHT}Refresh Token Already Expired")
+                    self.print_message(email, proxy, Fore.RED, f"Refreshing Tokens Failed: {Fore.YELLOW+Style.BRIGHT}Refresh Token Already Expired")
+                    return None
                 response.raise_for_status()
                 return response.json()
             except Exception as e:
                 if attempt < retries - 1:
                     await asyncio.sleep(5)
                     continue
-                return self.print_message(email, proxy, Fore.RED, f"Refreshing Tokens Failed: {Fore.YELLOW+Style.BRIGHT}{str(e)}")
+                self.print_message(email, proxy, Fore.RED, f"Refreshing Tokens Failed: {Fore.YELLOW+Style.BRIGHT}{str(e)}")
+
+        return None
     
     async def get_connection_quality(self, email: str, proxy=None, retries=5):
         url = f"{self.BASE_API}/user/get-connection-quality"
@@ -218,14 +221,16 @@ class Flow3:
         }
         for attempt in range(retries):
             try:
-                response = await asyncio.to_thread(requests.get, url=url, headers=headers, proxy=proxy, timeout=60, impersonate="chrome110")
+                response = await asyncio.to_thread(requests.get, url=url, headers=headers, proxy=proxy, timeout=60, impersonate="chrome110", verify=False)
                 response.raise_for_status()
                 return response.json()
             except Exception as e:
                 if attempt < retries - 1:
                     await asyncio.sleep(5)
                     continue
-                return self.print_message(email, proxy, Fore.RED, f"Connection Not 200 OK: {Fore.YELLOW+Style.BRIGHT}{str(e)}")
+                self.print_message(email, proxy, Fore.RED, f"Connection Not 200 OK: {Fore.YELLOW+Style.BRIGHT}{str(e)}")
+
+        return None
     
     async def get_point_stats(self, email: str, proxy=None, retries=5):
         url = f"{self.BASE_API}/user/get-point-stats"
@@ -235,14 +240,16 @@ class Flow3:
         }
         for attempt in range(retries):
             try:
-                response = await asyncio.to_thread(requests.get, url=url, headers=headers, proxy=proxy, timeout=60, impersonate="chrome110")
+                response = await asyncio.to_thread(requests.get, url=url, headers=headers, proxy=proxy, timeout=60, impersonate="chrome110", verify=False)
                 response.raise_for_status()
                 return response.json()
             except Exception as e:
                 if attempt < retries - 1:
                     await asyncio.sleep(5)
                     continue
-                return self.print_message(email, proxy, Fore.RED, f"GET Earning Stats Failed: {Fore.YELLOW+Style.BRIGHT}{str(e)}")
+                self.print_message(email, proxy, Fore.RED, f"GET Earning Stats Failed: {Fore.YELLOW+Style.BRIGHT}{str(e)}")
+
+        return None
     
     async def get_daily_checkin(self, email: str, proxy=None, retries=5):
         url = f"{self.BASE_API}/task/get-user-task-daily"
@@ -252,14 +259,16 @@ class Flow3:
         }
         for attempt in range(retries):
             try:
-                response = await asyncio.to_thread(requests.get, url=url, headers=headers, proxy=proxy, timeout=60, impersonate="chrome110")
+                response = await asyncio.to_thread(requests.get, url=url, headers=headers, proxy=proxy, timeout=60, impersonate="chrome110", verify=False)
                 response.raise_for_status()
                 return response.json()
             except Exception as e:
                 if attempt < retries - 1:
                     await asyncio.sleep(5)
                     continue
-                return self.print_message(email, proxy, Fore.RED, f"GET Check-In Status Failed: {Fore.YELLOW+Style.BRIGHT}{str(e)}")
+                self.print_message(email, proxy, Fore.RED, f"GET Check-In Status Failed: {Fore.YELLOW+Style.BRIGHT}{str(e)}")
+
+        return None
     
     async def claim_daily_checkin(self, email: str, task_id: str, title: str, proxy=None, retries=5):
         url = f"{self.BASE_API}/task/daily-check-in"
@@ -272,17 +281,19 @@ class Flow3:
         }
         for attempt in range(retries):
             try:
-                response = await asyncio.to_thread(requests.post, url=url, headers=headers, data=data, proxy=proxy, timeout=60, impersonate="chrome110")
+                response = await asyncio.to_thread(requests.post, url=url, headers=headers, data=data, proxy=proxy, timeout=60, impersonate="chrome110", verify=False)
                 response.raise_for_status()
                 return response.json()
             except Exception as e:
                 if attempt < retries - 1:
                     await asyncio.sleep(5)
                     continue
-                return self.print_message(email, proxy, Fore.RED, f"{title}"
+                self.print_message(email, proxy, Fore.RED, f"{title}"
                     f"{Fore.RED+Style.BRIGHT} Not Claimed: {Style.RESET_ALL}"
                     f"{Fore.YELLOW+Style.BRIGHT}{str(e)}{Style.RESET_ALL}"
                 )
+
+        return None
     
     async def get_user_task(self, email: str, proxy=None, retries=5):
         url = f"{self.BASE_API}/task/get-user-task"
@@ -292,14 +303,16 @@ class Flow3:
         }
         for attempt in range(retries):
             try:
-                response = await asyncio.to_thread(requests.get, url=url, headers=headers, proxy=proxy, timeout=60, impersonate="chrome110")
+                response = await asyncio.to_thread(requests.get, url=url, headers=headers, proxy=proxy, timeout=60, impersonate="chrome110", verify=False)
                 response.raise_for_status()
                 return response.json()
             except Exception as e:
                 if attempt < retries - 1:
                     await asyncio.sleep(5)
                     continue
-                return self.print_message(email, proxy, Fore.RED, f"GET Task Lists Failed: {Fore.YELLOW+Style.BRIGHT}{str(e)}")
+                self.print_message(email, proxy, Fore.RED, f"GET Task Lists Failed: {Fore.YELLOW+Style.BRIGHT}{str(e)}")
+
+        return None
     
     async def do_task(self, email: str, task_id: str, title: str, proxy=None, retries=5):
         url = f"{self.BASE_API}/task/do-task"
@@ -312,18 +325,20 @@ class Flow3:
         }
         for attempt in range(retries):
             try:
-                response = await asyncio.to_thread(requests.post, url=url, headers=headers, data=data, proxy=proxy, timeout=60, impersonate="chrome110")
+                response = await asyncio.to_thread(requests.post, url=url, headers=headers, data=data, proxy=proxy, timeout=60, impersonate="chrome110", verify=False)
                 response.raise_for_status()
                 return response.json()
             except Exception as e:
                 if attempt < retries - 1:
                     await asyncio.sleep(5)
                     continue
-                return self.print_message(email, proxy, Fore.BLUE, "Perform Task "
+                self.print_message(email, proxy, Fore.BLUE, "Perform Task "
                     f"{Fore.WHITE+Style.BRIGHT}{title}{Style.RESET_ALL}"
                     f"{Fore.RED+Style.BRIGHT} Failed: {Style.RESET_ALL}"
                     f"{Fore.YELLOW+Style.BRIGHT}{str(e)}{Style.RESET_ALL}"
                 )
+
+        return None
     
     async def claim_task(self, email: str, task_id: str, title: str, proxy=None, retries=5):
         url = f"{self.BASE_API}/task/claim-task"
@@ -336,18 +351,20 @@ class Flow3:
         }
         for attempt in range(retries):
             try:
-                response = await asyncio.to_thread(requests.post, url=url, headers=headers, data=data, proxy=proxy, timeout=60, impersonate="chrome110")
+                response = await asyncio.to_thread(requests.post, url=url, headers=headers, data=data, proxy=proxy, timeout=60, impersonate="chrome110", verify=False)
                 response.raise_for_status()
                 return response.json()
             except Exception as e:
                 if attempt < retries - 1:
                     await asyncio.sleep(5)
                     continue
-                return self.print_message(email, proxy, Fore.BLUE, "Task "
+                self.print_message(email, proxy, Fore.BLUE, "Task "
                     f"{Fore.WHITE+Style.BRIGHT}{title}{Style.RESET_ALL}"
                     f"{Fore.RED+Style.BRIGHT} Not Claimed: {Style.RESET_ALL}"
                     f"{Fore.YELLOW+Style.BRIGHT}{str(e)}{Style.RESET_ALL}"
                 )
+
+        return None
             
     async def process_refresh_token(self, email: str, use_proxy: bool, rotate_proxy: bool):
         while True:
